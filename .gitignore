@@ -1,0 +1,138 @@
+# ================================
+
+# SIH26172 - Project Git Ignore
+
+# ================================
+
+# ---------- ESP-IDF ----------
+
+# Build output
+
+firmware/build/
+
+# ESP-IDF generated files
+
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/dependencies.lock
+
+# Compilation database / generated metadata
+
+firmware/compile_commands.json
+
+# ---------- Local configuration ----------
+
+# Wi-Fi credentials / server configuration
+
+firmware/main/network_config.h
+
+# Local environment files
+
+.env
+.env.*
+!.env.example
+
+# ---------- Python ----------
+
+**pycache**/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+
+.venv/
+venv/
+env/
+ENV/
+
+# Python tooling
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------- ML / Data ----------
+
+# Datasets and generated data
+
+ml/data/raw/
+ml/data/processed/
+ml/data/downloads/
+
+# Training outputs
+
+ml/checkpoints/
+ml/runs/
+ml/logs/
+ml/outputs/
+
+# Large model files
+
+*.h5
+*.hdf5
+*.keras
+*.onnx
+*.tflite
+*.pt
+*.pth
+*.ckpt
+
+# ---------- Server ----------
+
+server/**pycache**/
+server/.pytest_cache/
+
+# ---------- Evaluation ----------
+
+evaluation/results/
+evaluation/plots/
+evaluation/logs/
+
+# ---------- IDE / Editors ----------
+
+.vscode/
+.idea/
+
+# VS Code ESP-IDF generated settings
+
+.vscode/settings.json
+
+# ---------- OS ----------
+
+# Windows
+
+Thumbs.db
+Desktop.ini
+
+# macOS
+
+.DS_Store
+
+# Linux
+
+*~
+
+# ---------- Logs ----------
+
+*.log
+
+# ---------- Temporary files ----------
+
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.orig
+
+# ---------- Secrets ----------
+
+*.pem
+*.key
+*.crt
+secrets/
+credentials/
+*_secret.*
+*_secrets.*
