@@ -1,109 +1,138 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <inttypes.h>
+#include "audio_pipeline.h"
+#include "audio_frames.h"
+#include "audio_features.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/i2s_std.h"
+#include "esp_timer.h"
+
 #include "esp_log.h"
-#include "esp_err.h"
+#include <stdint.h>
+#include <math.h>
 
-#define I2S_PORT    I2S_NUM_0
+static const char *TAG = "MAIN";
 
-#define PIN_SCK     GPIO_NUM_26
-#define PIN_WS      GPIO_NUM_25
-#define PIN_SD      GPIO_NUM_33
 
-#define SAMPLE_RATE 16000
-#define BUFFER_SIZE 256
+static void feature_test_task(void *arg)
+{
+    int32_t frame[AUDIO_FRAME_SIZE];
 
-static const char *TAG = "MIC_TEST";
+    float features[AUDIO_FEATURE_NUM_MEL];
+
+    audio_frame_info_t info;
+
+    uint32_t processed = 0;
+
+    while (1) {
+
+    if (audio_frames_available()) {
+
+        esp_err_t err =
+            audio_frames_get(
+                frame,
+                &info
+            );
+
+        if (err == ESP_OK) {
+
+            int64_t start =
+                esp_timer_get_time();
+
+            err =
+                audio_features_process(
+                    frame,
+                    features
+                );
+
+            int64_t elapsed =
+                esp_timer_get_time() -
+                start;
+
+            if (err == ESP_OK) {
+
+                processed++;
+
+                if ((processed % 100) == 0) {
+
+                    ESP_LOGI(
+                        "FEATURE_TEST",
+
+                        "frame=%lu "
+                        "sample=%llu "
+                        "time=%lld us "
+                        "mel[0]=%.4f "
+                        "mel[20]=%.4f "
+                        "mel[39]=%.4f",
+
+                        (unsigned long)
+                            info.frame_number,
+
+                        (unsigned long long)
+                            info.sample_index,
+
+                        (long long)
+                            elapsed,
+
+                        features[0],
+                        features[20],
+                        features[39]
+                    );
+                }
+            }
+        }
+
+        /*
+         * Give the other tasks/system CPU time
+         * after processing a frame.
+         */
+        vTaskDelay(pdMS_TO_TICKS(5));
+
+    } else {
+
+        /*
+         * No frame available yet.
+         * Sleep longer instead of polling rapidly.
+         */
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    }
+}
+
 
 void app_main(void)
 {
-    i2s_chan_handle_t rx_handle;
-
-    i2s_chan_config_t chan_cfg =
-        I2S_CHANNEL_DEFAULT_CONFIG(I2S_PORT, I2S_ROLE_MASTER);
-
-    ESP_ERROR_CHECK(
-        i2s_new_channel(&chan_cfg, NULL, &rx_handle)
-    );
-
-    i2s_std_config_t i2s_cfg = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-
-        .slot_cfg = I2S_STD_MSB_SLOT_DEFAULT_CONFIG(
-            I2S_DATA_BIT_WIDTH_32BIT,
-            I2S_SLOT_MODE_MONO
-        ),
-
-        .gpio_cfg = {
-            .mclk = I2S_GPIO_UNUSED,
-            .bclk = PIN_SCK,
-            .ws   = PIN_WS,
-            .dout = I2S_GPIO_UNUSED,
-            .din  = PIN_SD,
-
-            .invert_flags = {
-                .mclk_inv = false,
-                .bclk_inv = false,
-                .ws_inv   = false
-            }
-        }
-    };
-
-    i2s_cfg.slot_cfg.slot_mask = I2S_STD_SLOT_LEFT;
-
-    ESP_ERROR_CHECK(
-        i2s_channel_init_std_mode(rx_handle, &i2s_cfg)
+    ESP_LOGI(
+        TAG,
+        "Starting audio system"
     );
 
     ESP_ERROR_CHECK(
-        i2s_channel_enable(rx_handle)
+        audio_pipeline_init()
     );
 
-    ESP_LOGI(TAG, "INMP441 microphone started");
+    ESP_ERROR_CHECK(
+        audio_pipeline_start()
+    );
 
-    int32_t samples[BUFFER_SIZE];
-    size_t bytes_read;
+    ESP_ERROR_CHECK(
+        audio_frames_init()
+    );
 
-    while (1)
-    {
-        ESP_ERROR_CHECK(
-            i2s_channel_read(
-                rx_handle,
-                samples,
-                sizeof(samples),
-                &bytes_read,
-                portMAX_DELAY
-            )
-        );
+    ESP_ERROR_CHECK(
+        audio_features_init()
+    );
 
-        int count = bytes_read / sizeof(int32_t);
+    ESP_LOGI(
+        TAG,
+        "Audio system running"
+    );
 
-        /*
-         * Send every 4th sample.
-         * This gives 64 samples per buffer and keeps
-         * serial output manageable.
-         */
-        printf("DATA ");
-
-        for (int i = 0; i < count; i += 4)
-        {
-            /*
-             * INMP441 data is 24-bit inside the 32-bit slot.
-             * Shift down to obtain a useful signed amplitude.
-             */
-            int32_t sample = samples[i] >> 8;
-
-            printf("%" PRId32, sample);
-
-            if (i + 4 < count)
-                printf(",");
-        }
-
-        printf("\n");
-        fflush(stdout);
-    }
-}
+    xTaskCreate(
+        feature_test_task,
+        "feature_test",
+        8192,
+        NULL,
+        3,
+        NULL
+    );
+}   
