@@ -122,6 +122,7 @@ void app_main(void)
         audio_features_init()
     );
 
+
     ESP_LOGI(
         TAG,
         "Audio system running"
