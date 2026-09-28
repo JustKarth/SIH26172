@@ -1,2 +1,12 @@
-idf_component_register(SRCS "main.c"
-                    INCLUDE_DIRS ".")
+idf_component_register(
+    SRCS
+        "main.c"
+        "audio_pipeline.c"
+        "audio_frames.c"
+        "audio_features.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        esp_driver_i2s
+        esp_timer
+)
