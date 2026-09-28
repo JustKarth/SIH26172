@@ -1,38 +1,41 @@
-# ================================
+# ============================================================
 
-# SIH26172 - Project Git Ignore
+# SIH 26172 — Repository Git Ignore
 
-# ================================
+# ============================================================
 
-# ---------- ESP-IDF ----------
+# ------------------------------------------------------------
 
-# Build output
+# ESP-IDF / ESP32 build artifacts
 
-firmware/build/
+# ------------------------------------------------------------
+
+build/
+sdkconfig.old
+sdkconfig.*.old
+dependencies.lock
+
+# Keep the project's canonical sdkconfig if present.
+
+# Uncomment the following only if sdkconfig should NOT be tracked:
+
+# sdkconfig
 
 # ESP-IDF generated files
 
-firmware/sdkconfig
-firmware/sdkconfig.old
-firmware/dependencies.lock
+managed_components/
+components/*/build/
+*.elf
+*.bin
+*.map
+*.hex
+*.uf2
 
-# Compilation database / generated metadata
+# ------------------------------------------------------------
 
-firmware/compile_commands.json
+# Python
 
-# ---------- Local configuration ----------
-
-# Wi-Fi credentials / server configuration
-
-firmware/main/network_config.h
-
-# Local environment files
-
-.env
-.env.*
-!.env.example
-
-# ---------- Python ----------
+# ------------------------------------------------------------
 
 **pycache**/
 *.py[cod]
@@ -41,100 +44,222 @@ firmware/main/network_config.h
 # Virtual environments
 
 .venv/
+.venv-*/
 venv/
 env/
 ENV/
 
-# Python tooling
+# Python tooling / caches
 
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
 htmlcov/
 
-# ---------- ML / Data ----------
+# Jupyter
 
-# Datasets and generated data
+.ipynb_checkpoints/
 
-ml/data/raw/
-ml/data/processed/
-ml/data/downloads/
+# ------------------------------------------------------------
 
-# Training outputs
+# ML / experiment outputs
 
-ml/checkpoints/
-ml/runs/
-ml/logs/
-ml/outputs/
+# ------------------------------------------------------------
 
-# Large model files
+# TensorFlow / Keras temporary files
 
-*.h5
-*.hdf5
-*.keras
-*.onnx
-*.tflite
-*.pt
-*.pth
+*.keras.tmp
 *.ckpt
+*.ckpt.*
+checkpoint
+checkpoint.*
 
-# ---------- Server ----------
+# TensorBoard
 
-server/**pycache**/
-server/.pytest_cache/
+logs/
+runs/
 
-# ---------- Evaluation ----------
+# Model outputs
 
-evaluation/results/
-evaluation/plots/
-evaluation/logs/
+# Keep model directories themselves trackable, but ignore large
 
-# ---------- IDE / Editors ----------
+# generated model binaries/checkpoints by default.
+
+models/*.h5
+models/*.hdf5
+models/*.pb
+models/*.tflite
+models/*.onnx
+models/*.ckpt*
+models/saved_model/
+
+# ------------------------------------------------------------
+
+# Dataset — raw and generated data
+
+# ------------------------------------------------------------
+
+# Raw datasets are generally far too large for Git.
+
+dataset/raw/
+
+# Processed audio
+
+dataset/processed/**/*.wav
+
+# Generated feature arrays
+
+dataset/processed/**/*.npy
+dataset/processed/**/*.npz
+
+# Generated feature caches
+
+dataset/processed/features/
+
+# Dataset/debug artifacts
+
+dataset/debug/
+
+# Dataset metadata/manifests that are intentionally generated
+
+# should be reviewed before committing. Keep CSV/TSV tracked by
+
+# default unless explicitly ignored elsewhere.
+
+# ------------------------------------------------------------
+
+# Large local archives / downloads
+
+# ------------------------------------------------------------
+
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Audio/video downloaded locally
+
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.aac
+
+# ------------------------------------------------------------
+
+# Local experiment output
+
+# ------------------------------------------------------------
+
+*.log
+*.out
+*.tmp
+*.temp
+
+# Benchmark dumps
+
+benchmark_results/
+experiment_results/
+
+# ------------------------------------------------------------
+
+# OS files
+
+# ------------------------------------------------------------
+
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ------------------------------------------------------------
+
+# Editor / IDE
+
+# ------------------------------------------------------------
 
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# VS Code ESP-IDF generated settings
+# Visual Studio
 
-.vscode/settings.json
+.vs/
+*.user
+*.suo
+*.VC.db
 
-# ---------- OS ----------
+# ------------------------------------------------------------
 
 # Windows
 
-Thumbs.db
-Desktop.ini
+# ------------------------------------------------------------
 
-# macOS
+*.lnk
 
-.DS_Store
+# ------------------------------------------------------------
 
-# Linux
+# Secrets / local configuration
 
-*~
+# ------------------------------------------------------------
 
-# ---------- Logs ----------
+.env
+.env.*
+!.env.example
 
-*.log
-
-# ---------- Temporary files ----------
-
-*.tmp
-*.temp
-*.swp
-*.swo
-*.bak
-*.orig
-
-# ---------- Secrets ----------
+# Credentials / keys
 
 *.pem
 *.key
-*.crt
-secrets/
-credentials/
-*_secret.*
-*_secrets.*
+*.p12
+*.pfx
+credentials.json
+secrets.json
 
-dataset/
+# ------------------------------------------------------------
+
+# Local tooling
+
+# ------------------------------------------------------------
+
+*.egg-info/
+dist/
+wheelhouse/
+
+# ------------------------------------------------------------
+
+# Agent / local scratch files
+
+# ------------------------------------------------------------
+
+.agent/
+.agents/
+.claude/
+.cursor/
+.copilot/
+.tmp/
+scratch/
+scratchpad/
+
+# ------------------------------------------------------------
+
+# Explicit local-only files
+
+# ------------------------------------------------------------
+
+# Add machine-specific files here rather than committing them.
+
+# Example:
+
+# local_config.json
+
+# local_settings.py
+
+# hardware_notes.local.md

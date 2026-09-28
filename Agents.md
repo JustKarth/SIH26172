@@ -1,381 +1,922 @@
-# SIH26172 — Agent Engineering Rules
+# Agents.md — SIH 26172 Engineering Rules
 
-## 0. Mission
+## Project
 
-This repository implements SIH Problem Statement 26172:
+**SIH Problem Statement 26172 — Low Latency and Efficient Voice Activator for Edge Devices**
 
-"Low Latency and Efficient Voice Activator for Edge Devices."
+The system is an ultra-lightweight local wake-word detector running continuously on an ESP32, followed by low-overhead audio streaming to a remote ASR server after wake-word detection.
 
-The system is an embedded keyword-spotting device using an ESP32 and INMP441 microphone, followed by Wi-Fi audio streaming to a remote ASR server.
+The primary target hardware is:
 
-The existing audio capture and feature-extraction pipeline is a working baseline.
+* ESP32-D0WD-V3, revision 3.1
+* ESP32-WROOM-32-class development board
+* 4 MB flash
+* Current ESP-IDF: 6.1
+* Current development environment: Windows
+* Microphone: INMP441
+* I2S:
 
-DO NOT rewrite working subsystems without evidence that they are incorrect.
-
----
-
-# 1. Architectural ownership
-
-The human developer owns architectural decisions.
-
-The agent is responsible for implementation, testing, debugging, and proposing improvements.
-
-The agent MUST NOT:
-- silently redesign architecture
-- replace an existing subsystem merely because another design is more familiar
-- introduce a framework/library without justification
-- merge multiple responsibilities into one module
-- create duplicate implementations of an existing responsibility
-- move files merely for stylistic reasons
-- change public APIs unnecessarily
-
-If an architectural change appears necessary:
-
-1. Stop implementation.
-2. Explain the problem.
-3. Propose the change.
-4. Explain alternatives.
-5. Wait for approval.
+  * BCLK/SCK: GPIO26
+  * WS/LRCLK: GPIO25
+  * SD: GPIO33
+  * L/R: GND
+  * 3.3 V power
 
 ---
 
-# 2. Development process
+# 1. Highest-Priority Rules
 
-Every feature MUST follow:
+These rules apply to **every coding agent**.
 
-REQUIREMENTS
-    ↓
-DESIGN
-    ↓
-INTERFACES
-    ↓
-IMPLEMENTATION
-    ↓
-UNIT/COMPONENT TEST
-    ↓
-INTEGRATION TEST
-    ↓
-DOCUMENTATION
-
-Do not jump directly from requirements to implementation.
-
----
-
-# 3. Before editing
+### 1.1 Inspect before editing
 
 Before modifying anything:
 
-1. Read README.md.
-2. Read AGENTS.md.
-3. Inspect the relevant source files.
-4. Identify the module responsible for the requested behavior.
-5. Identify dependencies and consumers of that module.
-6. Inspect git status.
-7. Explain the intended change.
+1. Run `git status`.
+2. Inspect the relevant files.
+3. Inspect the current diff.
+4. Understand existing interfaces and data flow.
+5. Identify whether another agent may already be working on the relevant component.
 
-Do not edit files during the analysis phase.
+Never blindly overwrite existing work.
 
----
+### 1.2 Never revert unrelated work
 
-# 4. Modular architecture
+Do not:
 
-Each module must have ONE primary responsibility.
+* reset the repository;
+* checkout files to discard changes;
+* use `git clean`;
+* overwrite another agent's changes;
+* revert changes merely because they are unfamiliar.
 
-A module should answer:
+If existing changes appear unrelated to your task, leave them untouched.
 
-"What single reason would cause this module to change?"
+### 1.3 Stay inside your assigned scope
 
-If a module has multiple unrelated reasons to change, split it.
+Modify only files required for the assigned task.
 
-Prefer:
+Do not "clean up" unrelated code.
 
-module A → module B → module C
+Do not refactor working code merely because you prefer another style.
 
-over:
+Do not redesign the architecture without explicit approval.
 
-everything → giant manager module
+### 1.4 Preserve established interfaces
 
-Avoid "god" files such as:
-- system.c
-- manager.c
-- app.c
-- utils.c
+Before changing a public API, header, struct, function signature, file format, or protocol:
 
-unless their responsibilities are genuinely narrow.
+* determine who uses it;
+* explain why the change is required;
+* minimize compatibility impact.
 
----
+Prefer adapting your implementation around an existing interface rather than changing the interface.
 
-# 5. Interfaces first
+### 1.5 Test every meaningful change
 
-Before implementing a new subsystem, define its interface.
+After modifying code:
 
-For C modules:
+1. Build/test the affected component.
+2. Run the relevant existing tests.
+3. Inspect warnings/errors.
+4. Report exactly what was tested.
 
-module.h
-    ↓
-public types
-public functions
-ownership/lifetime rules
-error semantics
+Never claim something works without actually testing it.
 
-module.c
-    ↓
-implementation
+### 1.6 Do not silently weaken requirements
 
-The header should expose the minimum required API.
+Never solve a failing test by:
 
-Do not expose internal buffers, state machines, implementation structures, or synchronization primitives unless necessary.
+* increasing tolerances without investigating;
+* disabling assertions;
+* reducing test coverage;
+* removing problematic test cases;
+* lowering performance requirements;
+* ignoring memory/CPU failures.
 
----
-
-# 6. Dependency direction
-
-Dependencies must point toward lower-level infrastructure.
-
-Current intended direction:
-
-Application
-    ↓
-Wake Controller
-    ↓
-KWS
-    ↓
-Feature Extraction
-    ↓
-Audio Frames
-    ↓
-Audio Pipeline
-    ↓
-ESP-IDF / hardware
-
-Networking should be a separate subsystem.
-
-ASR server should not be coupled to ESP32 audio capture internals.
-
-The audio pipeline must not know about KWS.
-
-The feature extractor must not know about Wi-Fi.
-
-The KWS module must not know about WebSocket.
-
-The networking module must not manipulate the audio ring buffer directly.
+If a requirement cannot currently be met, report the failure and investigate the actual cause.
 
 ---
 
-# 7. Data ownership
+# 2. Project Architecture
 
-Every buffer must have an explicit owner.
+The intended architecture is:
 
-For every non-trivial buffer document:
+```text
+                    EDGE / ESP32
+┌───────────────────────────────────────────────────────┐
+│                                                       │
+│  INMP441                                               │
+│      │                                                │
+│      ▼                                                │
+│  I2S + DMA                                             │
+│      │                                                │
+│      ▼                                                │
+│  Audio Ring Buffer                                     │
+│      │                                                │
+│      ▼                                                │
+│  25 ms frames / 10 ms hop                              │
+│      │                                                │
+│      ▼                                                │
+│  Feature Extraction                                    │
+│      │                                                │
+│      ▼                                                │
+│  Tiny KWS CNN                                          │
+│      │                                                │
+│      ▼                                                │
+│  Temporal Wake Controller                              │
+│      │                                                │
+│      ▼                                                │
+│  WAKE DETECTED                                         │
+│      │                                                │
+│      └──────────────► Audio/network handoff            │
+│                                                       │
+└───────────────────────────────────────────────────────┘
+                             │
+                             ▼
+                    Wi-Fi / Network
+                             │
+                             ▼
+                       Python server
+                             │
+                             ▼
+                     Open-source ASR
+```
 
-- who allocates it
-- who writes it
-- who reads it
-- when it becomes invalid
-- whether it is copied or borrowed
-- whether it is thread-safe
+The system is divided into seven logical stages:
 
-Avoid unnecessary copies.
-
-But NEVER eliminate a copy merely for performance without measuring whether it matters.
-
----
-
-# 8. Concurrency
-
-Every FreeRTOS task must have:
-
-- one clearly defined responsibility
-- documented input/output
-- explicit synchronization mechanism
-- documented priority
-- documented stack requirement
-- documented CPU affinity if relevant
-
-Do not introduce polling loops when a notification/queue/semaphore is appropriate.
-
-Do not use busy waiting.
-
-Do not disable watchdogs to hide timing problems.
-
----
-
-# 9. Memory
-
-ESP32 RAM is a hard constraint.
-
-For every substantial allocation identify:
-
-FLASH / STATIC RAM / HEAP / DMA / STACK / TENSOR ARENA
-
-Do not allocate large buffers repeatedly.
-
-Prefer static allocation where appropriate.
-
-Do not move buffers to heap merely because it is convenient.
-
-The final system target is:
-
-RAM < 256 KB
-idle CPU < 10%
-
-Measurements must be real measurements.
-
-Never invent benchmark values.
+1. Hardware + I2S
+2. Audio Pipeline
+3. KWS ML
+4. Embedded Inference
+5. Wake-Word Controller
+6. Networking
+7. ASR + Evaluation
 
 ---
 
-# 10. Error handling
+# 3. Ownership Boundaries
 
-Do not ignore return values from:
+## ESP32 / Edge Owner
 
-- ESP-IDF APIs
-- memory allocation
-- I2S
-- networking
-- filesystem
-- model loading
-- queue/semaphore operations
+The ESP32 owner controls:
 
-Use ESP_ERROR_CHECK only when failure should be fatal during initialization.
+* I2S configuration
+* DMA configuration
+* audio capture
+* audio ring buffer
+* framing
+* feature extraction
+* embedded inference
+* model deployment
+* quantization
+* tensor arena
+* ESP32 RAM/Flash measurements
+* CPU measurements
+* wake-word temporal controller
+* wake detection
+* pre-roll audio
+* audio handoff to networking
 
-Runtime failures should normally be handled explicitly.
+The ESP32 owner is responsible for ensuring the complete edge-side system actually runs continuously on the target hardware.
 
----
+## Networking / ASR Owner
 
-# 11. Logging
+The networking owner controls:
 
-Logs should describe system behavior, not spam raw data.
+* Wi-Fi transport
+* ESP32-to-server protocol
+* Python server
+* audio receiving
+* server-side buffering
+* ASR integration
+* network latency measurements
+* server/ASR latency measurements
+* end-to-end latency instrumentation
 
-Use appropriate ESP_LOG levels.
+The networking owner must not redesign the ESP32 feature extractor or KWS model.
 
-Do not print entire feature matrices, PCM buffers, or repeated per-frame information in production paths.
+## ML / Model Owner
 
-Debug instrumentation should be easy to disable.
+The ML owner controls:
 
----
+* training scripts
+* model conversion
+* quantization experiments
+* model-size analysis
+* PC-side evaluation
+* model accuracy/recall/precision analysis
 
-# 12. Testing
-
-Every subsystem needs an acceptance test.
-
-A successful compilation is NOT an acceptance test.
-
-Examples:
-
-Audio:
-- continuous 16 kHz capture
-- no unexplained overruns
-
-Framing:
-- 400 sample frame
-- 160 sample hop
-
-Features:
-- numerical parity with Python reference
-
-KWS:
-- held-out speaker evaluation
-- false activation measurement
-
-Inference:
-- latency
-- RAM
-- model size
-
-Networking:
-- valid session state transitions
-- PCM integrity
-
-End-to-end:
-- wake detection
-- audio streaming
-- ASR result
-- latency measurement
+The ML owner must not alter the production ESP32 audio pipeline to make a model work.
 
 ---
 
-# 13. Change size
+# 4. Current Audio Specification
 
-Prefer small, reviewable changes.
+The canonical audio representation is:
 
-A task should normally modify only the files necessary for that task.
+* Sample rate: **16,000 Hz**
+* Channels: **1**
+* PCM representation downstream: **signed 16-bit**
+* Frame size: **400 samples**
+* Frame duration: **25 ms**
+* Hop: **160 samples**
+* Hop duration: **10 ms**
+* FFT size: **512**
+* Mel filters: **40**
+* Mel frequency range: **20 Hz–8 kHz**
+* Pre-emphasis: **alpha = 0.97**
+* Window: **Hamming**
+* Log floor: **1e-10**
+* 1-second feature representation: **98 frames × 40 features**
 
-Do not perform unrelated refactoring while implementing a feature.
+Do not change these parameters casually.
 
-If unrelated problems are discovered:
-- document them
-- do not automatically fix them unless they block the current task
-
----
-
-# 14. Build discipline
-
-After modifying firmware:
-
-    idf.py build
-
-Do not claim the implementation works until the build succeeds.
-
-If hardware testing is possible, distinguish:
-
-BUILD VERIFIED
-
-from:
-
-HARDWARE VERIFIED
-
-Do not confuse the two.
+Any change must be treated as an explicit experiment and must preserve the existing reference implementation.
 
 ---
 
-# 15. Git discipline
+# 5. Feature Extractor Is a Contract
 
-Before substantial changes:
+The Python and ESP32 feature extractors have already been brought into numerical parity.
 
-    git status
-    git diff
+The feature pipeline is:
 
-Never overwrite the working baseline without a recoverable git state.
+```text
+PCM16
+  ↓
+/ 32768
+  ↓
+Pre-emphasis (alpha=0.97)
+  ↓
+Hamming window
+  ↓
+512-point zero-padded FFT
+  ↓
+Power spectrum
+  ↓
+40 triangular Mel filters
+  ↓
+log()
+  ↓
+40 log-Mel features
+```
 
-Prefer logically grouped commits.
+The ESP32 implementation uses a handwritten float32 radix-2 FFT.
 
-Do not rewrite history unless explicitly requested.
+NumPy may produce tiny numerical differences because it uses a different FFT implementation.
+
+### Important
+
+Do **not**:
+
+* replace the FFT without approval;
+* change the Mel filter definition;
+* remove pre-emphasis;
+* change frame/hop sizes;
+* change normalization;
+* change the log floor;
+* silently change PCM alignment;
+* introduce a different feature representation.
+
+If feature extraction is modified, parity with Python must be re-established.
 
 ---
 
-# 16. Definition of done
+# 6. I2S / INMP441 Rules
 
-A feature is DONE only when:
+The INMP441 provides I2S audio using 24-bit data in a 32-bit slot.
 
-[ ] implementation exists
-[ ] interface is documented
-[ ] build passes
-[ ] relevant test passes
-[ ] resource usage is understood
-[ ] error cases are considered
-[ ] README/documentation is updated
-[ ] git diff contains no unrelated changes
+The ESP32 capture path currently reads 32-bit values.
+
+Do not assume that the microphone's meaningful 24-bit sample occupies a particular bit range without verification.
+
+The current feature extractor uses:
+
+```c
+(int16_t)(raw_frame[i] >> 16)
+```
+
+followed by normalization.
+
+This alignment has been experimentally established for the current hardware/configuration.
+
+If changing I2S configuration, re-verify sample alignment experimentally.
+
+Never silently change:
+
+* slot mode;
+* bit width;
+* channel selection;
+* clock configuration;
+* sample extraction;
+* sign extension.
 
 ---
 
-# 17. When uncertain
+# 7. Audio Pipeline Rules
 
-Do NOT guess silently.
+The intended data flow is:
 
-Classify uncertainty as:
+```text
+I2S peripheral
+      ↓
+DMA-managed buffers
+      ↓
+i2s_channel_read()
+      ↓
+local DMA read buffer
+      ↓
+software ring buffer
+      ↓
+frame generator
+      ↓
+feature extractor
+```
 
-A. implementation detail
-   → decide and proceed
+DMA is a hardware transfer mechanism. Do not describe or implement it as if it were an independent application-level storage layer.
 
-B. requirement ambiguity
-   → state assumption
+Current relevant constants:
 
-C. architectural decision
-   → stop and ask
+```text
+AUDIO_SAMPLE_RATE       = 16000
+AUDIO_CHANNELS          = 1
+AUDIO_RING_SAMPLES      = 16000
+AUDIO_DMA_READ_SAMPLES  = 256
+```
 
-D. safety/correctness issue
-   → stop and explain
+Current framing:
 
-The agent should be autonomous about implementation,
-but conservative about architecture.
+```text
+AUDIO_FRAME_SIZE = 400
+AUDIO_FRAME_HOP  = 160
+```
+
+Do not redesign the buffering architecture unless explicitly requested.
+
+---
+
+# 8. Current Production Files
+
+Important existing files include:
+
+```text
+firmware/main/audio_pipeline.c
+firmware/main/audio_pipeline.h
+
+firmware/main/audio_frames.c
+firmware/main/audio_frames.h
+
+firmware/main/audio_features.c
+firmware/main/audio_features.h
+
+firmware/main/main.c
+
+python/reference/feature_extractor.py
+python/reference/parity_test.py
+
+python/preprocess_audio.py
+python/extract_features.py
+python/validate_features.py
+python/train_kws_baseline.py
+python/evaluate_kws_thresholds.py
+python/evaluate_kws_long_negative.py
+```
+
+Before editing any of these, inspect the current version rather than relying on this document alone.
+
+---
+
+# 9. Feature Parity Test Rules
+
+The approved parity experiment used:
+
+* deterministic silence;
+* deterministic ramp;
+* deterministic pseudo-random int32 vectors;
+* explicitly safe `int32_t` / `uint32_t` arithmetic;
+* identical input vectors on C and Python sides;
+* all 40 feature values;
+* initial comparison:
+
+  * `atol = 1e-3`
+  * `rtol = 1e-3`
+
+Report:
+
+* maximum absolute error;
+* mean absolute error;
+* maximum relative error;
+* feature index of maximum error.
+
+If tolerance fails:
+
+**Investigate the source of divergence before loosening tolerance.**
+
+Do not simply increase tolerance.
+
+The temporary ESP32 parity harness was experimental.
+
+Production `main.c` should remain free of temporary parity-test code unless explicitly requested.
+
+---
+
+# 10. ML Model Rules
+
+Current baseline model:
+
+```text
+Conv2D 16, 5×5
+BatchNorm
+ReLU
+MaxPool 2×2
+
+Conv2D 32, 3×3
+BatchNorm
+ReLU
+MaxPool 2×2
+
+Conv2D 64, 3×3
+BatchNorm
+ReLU
+
+GlobalAveragePooling
+
+Dense 32
+ReLU
+Dropout 0.25
+
+Dense 2
+Softmax
+```
+
+Approximately:
+
+```text
+26,034 parameters
+~101.7 KB FP32 weights
+```
+
+The current baseline achieved approximately:
+
+```text
+Test accuracy:          99.02%
+Keyword recall:         96.99%
+Keyword precision:      97.73%
+Negative recall:        99.48%
+```
+
+These numbers are **window-level test results**, not continuous-listening false-activation performance.
+
+Never present the 99% accuracy number as proof that the deployed wake-word detector is solved.
+
+---
+
+# 11. Threshold Rules
+
+The CNN output is a probability-like score for the keyword class.
+
+Threshold selection must consider:
+
+* keyword recall;
+* false positives;
+* false activation events/hour;
+* temporal confirmation;
+* latency.
+
+Do not select a final production threshold merely because it gives zero false positives on a small test set.
+
+Current threshold `0.60` is only an experimental operating point.
+
+It is **not a permanently approved production threshold**.
+
+---
+
+# 12. Long-Negative Evaluation
+
+The long-negative evaluator scans spontaneous English speech using:
+
+* 1-second windows;
+* 10 ms hop;
+* the existing feature extractor;
+* the existing trained model;
+* no retraining;
+* no temporal smoothing;
+* no debounce.
+
+Adjacent positive windows are grouped into one event per source file.
+
+The metric is:
+
+```text
+false activation events / hour
+```
+
+This is more relevant to continuous wake-word operation than ordinary classification accuracy.
+
+### Important evaluation caveat
+
+The current Common Voice long-negative scan includes data from the Common Voice corpus that overlaps with the negative data used during model development.
+
+Therefore:
+
+**The full Common Voice scan is an operational stress test, not a perfectly independent held-out false-activation benchmark.**
+
+Do not claim otherwise.
+
+---
+
+# 13. Dataset Rules
+
+Current working wake-word candidate:
+
+```text
+computer
+```
+
+This candidate was selected because relevant open datasets contain recordings associated with it.
+
+The wake word is not to be changed casually.
+
+Current corpus includes:
+
+* Picovoice wake-word benchmark data;
+* OVOS wake-word/community data;
+* supplementary synthetic data where applicable;
+* Common Voice spontaneous English negatives.
+
+Do not download huge datasets unnecessarily.
+
+Do not create a new dataset unless explicitly assigned.
+
+Do not introduce proprietary wake-word data or proprietary SDKs.
+
+---
+
+# 14. Open-Source Requirement
+
+The project must use open-source components.
+
+Do not introduce:
+
+* proprietary wake-word SDKs;
+* commercial cloud-only wake-word APIs;
+* closed-source inference dependencies;
+* licensing-incompatible datasets;
+* software with unclear redistribution restrictions.
+
+If licensing is unclear, flag it instead of silently assuming it is acceptable.
+
+---
+
+# 15. ESP32 Embedded Inference
+
+The embedded inference implementation should target an open-source embedded runtime such as TensorFlow Lite Micro, subject to compatibility testing.
+
+Required measurements:
+
+### Model
+
+* `.tflite` size
+* FP32/INT8 size
+* number of parameters
+* operators used
+* input/output tensor shapes
+* quantization details
+
+### ESP32
+
+* model Flash usage
+* tensor arena size
+* runtime RAM
+* stack/heap usage
+* minimum free heap
+* inference latency
+* CPU usage
+
+The project target is:
+
+```text
+<256 KB total relevant working RAM
+<10% CPU while idle/continuously listening
+```
+
+Do not confuse:
+
+```text
+model size
+```
+
+with:
+
+```text
+total deployment memory
+```
+
+The tensor arena, buffers, stacks, audio ring buffer, runtime state, and other allocations matter.
+
+---
+
+# 16. Quantization Rules
+
+INT8 quantization should be evaluated against FP32.
+
+Report:
+
+```text
+FP32 model size
+INT8 model size
+
+FP32:
+  recall
+  precision
+  false-positive behavior
+
+INT8:
+  recall
+  precision
+  false-positive behavior
+
+ESP32:
+  RAM
+  Flash
+  inference latency
+```
+
+Do not declare INT8 acceptable solely because the file became smaller.
+
+Do not retrain unless explicitly requested.
+
+---
+
+# 17. Wake-Word Controller
+
+The CNN should not necessarily trigger a wake event from one isolated probability sample.
+
+The temporal controller may use:
+
+* thresholding;
+* consecutive positive windows;
+* score accumulation;
+* smoothing;
+* temporal voting;
+* cooldown/debounce.
+
+Any controller must balance:
+
+```text
+false activation rate
+        vs
+missed wake words
+        vs
+detection latency
+```
+
+The controller must be deterministic and cheap enough for the ESP32.
+
+Avoid dynamic allocation in the hot path.
+
+Avoid unnecessary floating-point computation if an equivalent fixed-point/integer implementation is practical.
+
+Do not sacrifice correctness for micro-optimizations before measuring.
+
+---
+
+# 18. Networking Boundary
+
+The ESP32 KWS system should expose a clean handoff after wake detection.
+
+Conceptually:
+
+```c
+wake_detected()
+get_preroll_audio()
+start_audio_stream()
+```
+
+The exact API may differ, but the ownership boundary should remain clear.
+
+The ESP32 owner should not implement the server's ASR stack.
+
+The networking owner should not rewrite the ESP32 feature extractor or KWS pipeline.
+
+Initially, networking may use a manual/synthetic wake trigger to unblock independent development.
+
+---
+
+# 19. Performance Measurement Rules
+
+Performance claims must be measured on the actual target whenever possible.
+
+Do not estimate ESP32 performance from:
+
+* PC execution time;
+* Python execution time;
+* model parameter count alone;
+* theoretical FLOPs.
+
+Measure:
+
+```text
+feature extraction latency
+inference latency
+end-to-end edge detection latency
+free heap
+minimum heap
+audio drops
+CPU utilization
+Flash usage
+tensor arena
+continuous runtime stability
+```
+
+For continuous listening, run long enough to expose:
+
+* buffer drift;
+* dropped samples;
+* memory leaks;
+* watchdog issues;
+* unstable CPU behavior.
+
+---
+
+# 20. Coding Style
+
+For C:
+
+* use fixed-width integer types where representation matters;
+* use `size_t` for buffer sizes;
+* use `uint64_t` for absolute sample counters;
+* avoid implicit signed/unsigned conversions;
+* avoid integer overflow;
+* avoid hidden narrowing conversions;
+* keep ISR/hot-path code minimal;
+* avoid dynamic allocation in continuous audio processing.
+
+For Python:
+
+* make random operations deterministic when used for experiments;
+* expose seeds;
+* preserve reproducibility;
+* use explicit paths relative to the project root where practical;
+* fail clearly rather than silently skipping data.
+
+---
+
+# 21. Reproducibility
+
+Experiments must record:
+
+* random seed;
+* model version;
+* dataset/split;
+* preprocessing configuration;
+* feature configuration;
+* threshold;
+* relevant command;
+* resulting metrics.
+
+Do not modify preprocessing between experiments without recording the change.
+
+Do not compare two model results if their preprocessing differs without explicitly stating that fact.
+
+---
+
+# 22. Git Rules
+
+Agents must frequently inspect:
+
+```bash
+git status
+git diff
+```
+
+Before finishing a task, report:
+
+```text
+Files changed:
+...
+
+Why:
+...
+
+Tests run:
+...
+
+Results:
+...
+
+Known limitations:
+...
+```
+
+Do not commit unless explicitly instructed.
+
+Do not push unless explicitly instructed.
+
+Do not create branches unless explicitly instructed.
+
+---
+
+# 23. Agent Handoff Rules
+
+When an agent finishes:
+
+1. Leave the working tree in a buildable/testable state.
+2. Do not leave temporary debugging code enabled in production paths.
+3. Clearly identify generated files.
+4. Clearly identify commands used.
+5. Clearly identify failures.
+6. Clearly identify assumptions.
+7. Do not hide incomplete work.
+
+If work is incomplete, say:
+
+```text
+INCOMPLETE:
+<what remains>
+```
+
+Do not present partial implementation as finished.
+
+---
+
+# 24. Temporary Experiments
+
+Experimental code must be clearly separated from production code.
+
+Temporary files should be removed after the experiment unless they provide lasting reproducibility value.
+
+Before removing experimental code:
+
+* preserve useful Python/reference scripts;
+* restore production firmware behavior;
+* verify the production build again.
+
+Never leave a test harness silently changing production behavior.
+
+---
+
+# 25. What Agents Must NOT Do
+
+Without explicit approval, agents must not:
+
+* redesign the architecture;
+* replace the feature extractor;
+* change frame size/hop;
+* change sample rate;
+* change the microphone configuration;
+* change the I2S sample interpretation;
+* replace the FFT;
+* change the wake word;
+* retrain the model;
+* create a new dataset;
+* introduce proprietary SDKs;
+* optimize away tests;
+* weaken tolerances;
+* delete another agent's changes;
+* reset the repository;
+* modify unrelated modules;
+* claim benchmark success without measurements.
+
+---
+
+# 26. Definition of Done
+
+A task is complete only when:
+
+```text
+[ ] Scope was inspected before editing
+[ ] Existing changes were preserved
+[ ] Only necessary files were modified
+[ ] Code builds
+[ ] Relevant tests run
+[ ] Results were inspected
+[ ] Performance was measured when relevant
+[ ] No temporary production debugging remains
+[ ] Known limitations are documented
+[ ] Changed files are reported
+```
+
+For ESP32 tasks additionally:
+
+```text
+[ ] Tested on actual ESP32 where applicable
+[ ] RAM measured
+[ ] Flash measured
+[ ] Latency measured
+[ ] CPU measured where applicable
+[ ] Continuous operation checked where applicable
+```
+
+---
+
+# 27. Golden Rule
+
+When uncertain:
+
+**Do less, inspect more, measure first, and never silently change an established contract.**
+
+The goal is not to produce the most code.
+
+The goal is to produce a **measurably correct, low-latency, low-memory, continuously running wake-word system on the actual ESP32 hardware.**
