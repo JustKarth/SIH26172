@@ -1054,6 +1054,13 @@ Audio should be transmitted as **binary WebSocket data**, not Base64.
 
 # 31. Planned WebSocket Protocol
 
+The initial Python audio receiver is implemented under `server/`. It exposes
+`GET /health` and `WS /ws/audio`, validates the canonical PCM16 format, and
+saves completed streams as WAV files. See [server/README.md](server/README.md)
+for setup and message details. It does not perform ASR, and the ESP32 firmware
+does not yet connect to it; firmware Wi-Fi/WebSocket integration remains a
+separate next step.
+
 ### Start
 
 ```json
