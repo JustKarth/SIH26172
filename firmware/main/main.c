@@ -1,6 +1,7 @@
 #include "audio_pipeline.h"
 #include "audio_frames.h"
 #include "audio_features.h"
+#include "wake_led.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -104,6 +105,10 @@ void app_main(void)
     ESP_LOGI(
         TAG,
         "Starting audio system"
+    );
+
+    ESP_ERROR_CHECK(
+        wake_led_init()
     );
 
     ESP_ERROR_CHECK(

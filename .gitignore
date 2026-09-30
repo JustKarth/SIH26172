@@ -250,6 +250,21 @@ scratchpad/
 
 # ------------------------------------------------------------
 
+# Server runtime output
+
+# ------------------------------------------------------------
+
+# Audio recordings captured by the server at runtime.
+# These are large binary session files and should not be committed.
+recordings/
+
+# HuggingFace model cache (faster-whisper downloads model weights on first run).
+# The cache lives in %USERPROFILE%\.cache\huggingface but may also be
+# redirected here via HF_HOME; keep any local copy out of version control.
+.cache/
+
+# ------------------------------------------------------------
+
 # Explicit local-only files
 
 # ------------------------------------------------------------

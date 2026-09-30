@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SIH 26172 — Wake Word Monitor</title>
+  <style>
+    /* ── Reset & base ────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --green:     #3fb950;
+      --green-dim: #1a4229;
+      --red:       #f85149;
+      --blue:      #58a6ff;
+      --amber:     #d29922;
+      --radius:    12px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px;
+      gap: 28px;
+    }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    header { text-align: center; }
+    header h1 { font-size: 1.4rem; font-weight: 600; letter-spacing: 0.04em; }
+    header p  { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+
+    /* ── Connection status pill ──────────────────────────────── */
+    #conn-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      padding: 4px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      transition: color .3s, border-color .3s;
+    }
+    #conn-pill.connected   { color: var(--green); border-color: var(--green); }
+    #conn-pill.disconnected{ color: var(--red);   border-color: var(--red);   }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ── Big boolean indicator ───────────────────────────────── */
+    #indicator-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    #orb {
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      background: #1c1c1c;
+      border: 3px solid var(--border);
+      box-shadow: 0 0 0 0 transparent;
+      transition: background .4s, border-color .4s, box-shadow .4s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #orb svg { opacity: 0.25; transition: opacity .4s; }
+
+    #orb.active {
+      background: var(--green-dim);
+      border-color: var(--green);
+      box-shadow:
+        0 0 30px 6px rgba(63,185,80,.45),
+        0 0 70px 16px rgba(63,185,80,.18);
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    #orb.active svg { opacity: 1; }
+    #orb.error {
+      border-color: var(--red);
+      box-shadow: 0 0 20px 4px rgba(248,81,73,.4);
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow:
+        0 0 30px 6px  rgba(63,185,80,.45),
+        0 0 70px 16px rgba(63,185,80,.18); }
+      50%       { box-shadow:
+        0 0 50px 14px rgba(63,185,80,.65),
+        0 0 90px 28px rgba(63,185,80,.28); }
+    }
+
+    #state-label {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      transition: color .4s;
+    }
+    #state-label.active { color: var(--green); }
+    #state-label.error  { color: var(--red);   }
+
+    /* ── Info cards row ──────────────────────────────────────── */
+    .cards {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: center;
+      width: 100%;
+      max-width: 620px;
+    }
+
+    .card {
+      flex: 1 1 160px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+    .card .label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .card .value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text);
+      word-break: break-all;
+      font-variant-numeric: tabular-nums;
+    }
+    .card .value.highlight { color: var(--blue); }
+
+    /* ── Event log ───────────────────────────────────────────── */
+    #log-wrap {
+      width: 100%;
+      max-width: 620px;
+    }
+    #log-wrap h2 {
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    #log {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      max-height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .log-entry {
+      font-size: 0.79rem;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      color: var(--muted);
+      display: flex;
+      gap: 10px;
+    }
+    .log-entry .ts  { color: var(--border); flex-shrink: 0; }
+    .log-entry.wake { color: var(--green); }
+    .log-entry.end  { color: var(--blue);  }
+    .log-entry.err  { color: var(--red);   }
+
+    /* ── Transcription card ──────────────────────────────────── */
+    #transcript-card {
+      width: 100%;
+      max-width: 620px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .transcript-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .transcript-header .title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .latency-badge {
+      font-size: 0.74rem;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      padding: 3px 9px;
+      border-radius: 6px;
+      background: #152238;
+      color: var(--blue);
+      border: 1px solid #1e3a5f;
+    }
+    #transcript-text {
+      font-size: 1.15rem;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.4;
+      min-height: 1.6em;
+    }
+    #transcript-text.empty {
+      color: var(--muted);
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>SIH 26172 — Wake Word Monitor</h1>
+    <p>ESP32 · INMP441 · "computer"</p>
+  </header>
+
+  <div id="conn-pill" class="disconnected">
+    <span class="dot"></span>
+    <span id="conn-text">Connecting…</span>
+  </div>
+
+  <!-- ── Big boolean orb ──────────────────────────────────── -->
+  <div id="indicator-wrap">
+    <div id="orb">
+      <!-- Microphone icon -->
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none"
+           stroke="var(--green)" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2" width="6" height="11" rx="3"/>
+        <path d="M5 10a7 7 0 0 0 14 0"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+        <line x1="8"  y1="22" x2="16" y2="22"/>
+      </svg>
+    </div>
+    <div id="state-label">IDLE</div>
+  </div>
+
+  <!-- ── Live ASR Transcription Card ──────────────────────── -->
+  <div id="transcript-card">
+    <div class="transcript-header">
+      <span class="title">Live ASR Transcription</span>
+      <span class="latency-badge" id="badge-latency">— ms</span>
+    </div>
+    <div id="transcript-text" class="empty">Waiting for speech…</div>
+  </div>
+
+  <!-- ── Info cards ─────────────────────────────────────── -->
+  <div class="cards">
+    <div class="card">
+      <div class="label">Session ID</div>
+      <div class="value highlight" id="card-session">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Audio received</div>
+      <div class="value" id="card-bytes">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Duration</div>
+      <div class="value" id="card-duration">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Total sessions</div>
+      <div class="value" id="card-count">0</div>
+    </div>
+  </div>
+
+  <!-- ── Event log ──────────────────────────────────────── -->
+  <div id="log-wrap">
+    <h2>Event log</h2>
+    <div id="log"></div>
+  </div>
+
+  <script>
+    // ── DOM refs ───────────────────────────────────────────────
+    const orb        = document.getElementById('orb');
+    const stateLabel = document.getElementById('state-label');
+    const connPill   = document.getElementById('conn-pill');
+    const connText   = document.getElementById('conn-text');
+    const log        = document.getElementById('log');
+
+    const cardSession  = document.getElementById('card-session');
+    const cardBytes    = document.getElementById('card-bytes');
+    const cardDuration = document.getElementById('card-duration');
+    const cardCount    = document.getElementById('card-count');
+
+    const transcriptText = document.getElementById('transcript-text');
+    const badgeLatency   = document.getElementById('badge-latency');
+
+    let sessionCount = 0;
+
+    // ── Helpers ────────────────────────────────────────────────
+    function ts() {
+      return new Date().toLocaleTimeString([], {hour12: false});
+    }
+
+    function addLog(text, cls = '') {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry' + (cls ? ' ' + cls : '');
+      entry.innerHTML = `<span class="ts">${ts()}</span><span>${text}</span>`;
+      log.prepend(entry);
+      // Keep at most 60 lines
+      while (log.children.length > 60) log.removeChild(log.lastChild);
+    }
+
+    function fmt(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      return (bytes / 1024).toFixed(1) + ' KB';
+    }
+
+    let wakeStartTime = 0;
+    let holdTimeout   = null;
+
+    function setWake(active) {
+      if (active) {
+        if (holdTimeout) clearTimeout(holdTimeout);
+        wakeStartTime = Date.now();
+        orb.classList.add('active');
+        orb.classList.remove('error');
+        stateLabel.textContent = 'WAKE DETECTED (STREAMING)';
+        stateLabel.className   = 'active';
+      } else {
+        const elapsed = Date.now() - wakeStartTime;
+        const minHold = 2000; // Hold visible green for at least 2 seconds
+        if (elapsed < minHold) {
+          if (holdTimeout) clearTimeout(holdTimeout);
+          stateLabel.textContent = 'STREAM COMPLETED';
+          holdTimeout = setTimeout(() => {
+            orb.classList.remove('active', 'error');
+            stateLabel.textContent = 'IDLE';
+            stateLabel.className   = '';
+          }, minHold - elapsed);
+        } else {
+          orb.classList.remove('active', 'error');
+          stateLabel.textContent = 'IDLE';
+          stateLabel.className   = '';
+        }
+      }
+    }
+
+    function setError(reason) {
+      if (holdTimeout) clearTimeout(holdTimeout);
+      orb.classList.remove('active');
+      orb.classList.add('error');
+      stateLabel.textContent = 'ERROR';
+      stateLabel.className   = 'error';
+      addLog('⚠ ' + reason, 'err');
+      setTimeout(() => { setWake(false); }, 4000);
+    }
+
+    // ── WebSocket with liveness check ──────────────────────────
+    const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws')
+                  + '://' + location.host + '/ws/ui';
+
+    function connect() {
+      const ws = new WebSocket(wsUrl);
+      let pingTimer   = null;
+      let pongTimeout = null;
+      let alive       = false;
+
+      function stopTimers() {
+        clearInterval(pingTimer);
+        clearTimeout(pongTimeout);
+      }
+
+      function schedulePing() {
+        pingTimer = setInterval(() => {
+          if (ws.readyState !== WebSocket.OPEN) return;
+          // Send a client-side ping; server echoes back {"event":"ping"}
+          ws.send(JSON.stringify({type: 'ping'}));
+          // If we get no reply within 5 s the connection is stale → reconnect
+          pongTimeout = setTimeout(() => {
+            addLog('Connection stale — reconnecting…', 'err');
+            ws.close();
+          }, 5000);
+        }, 10000);
+      }
+
+      ws.onopen = () => {
+        alive = true;
+        connPill.className   = 'connected';
+        connText.textContent = 'Connected';
+        addLog('Dashboard connected to server');
+        schedulePing();
+      };
+
+      ws.onmessage = (e) => {
+        // Any message from the server proves the connection is alive.
+        clearTimeout(pongTimeout);
+
+        let data;
+        try { data = JSON.parse(e.data); } catch { return; }
+
+        if (data.event === 'wake_detected') {
+          setWake(true);
+          sessionCount++;
+          cardSession.textContent  = data.session_id.slice(0, 12) + '…';
+          cardBytes.textContent    = '—';
+          cardDuration.textContent = '—';
+          cardCount.textContent    = sessionCount;
+          transcriptText.textContent = 'Listening / capturing speech…';
+          transcriptText.className   = 'empty';
+          badgeLatency.textContent   = 'Transcribing…';
+          addLog('🔔 Wake word detected — session ' + data.session_id.slice(0,8), 'wake');
+        }
+
+        else if (data.event === 'stream_ended') {
+          setWake(false);
+          cardBytes.textContent    = fmt(data.bytes);
+          cardDuration.textContent = data.duration_seconds.toFixed(2) + ' s';
+
+          if (data.text && data.text.trim()) {
+            transcriptText.textContent = `“${data.text.trim()}”`;
+            transcriptText.className   = '';
+          } else {
+            transcriptText.textContent = '(no speech detected / silence)';
+            transcriptText.className   = 'empty';
+          }
+
+          if (data.latency) {
+            badgeLatency.textContent = `⚡ ASR: ${data.latency.asr_inference_ms} ms | Total: ${data.latency.total_server_time_ms} ms`;
+          }
+
+          const txtSummary = data.text ? `"${data.text.trim()}"` : '(silence)';
+          const asrMs = data.latency ? `${data.latency.asr_inference_ms} ms` : '—';
+          addLog(`✔ Transcribed: ${txtSummary} [ASR: ${asrMs}]`, 'end');
+        }
+
+        else if (data.event === 'error') {
+          setError(data.reason || 'Unknown error');
+        }
+
+        else if (data.event === 'idle') {
+          setWake(false);
+        }
+        // 'ping' from server resets pongTimeout above — nothing else to do.
+      };
+
+      ws.onclose = () => {
+        stopTimers();
+        connPill.className   = 'disconnected';
+        connText.textContent = 'Disconnected — reconnecting…';
+        setWake(false);
+        if (alive) addLog('Connection lost, retrying in 2 s…', 'err');
+        alive = false;
+        setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    connect();
+  </script>
+</body>
+</html>

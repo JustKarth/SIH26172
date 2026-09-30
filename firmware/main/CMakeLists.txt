@@ -4,9 +4,11 @@ idf_component_register(
         "audio_pipeline.c"
         "audio_frames.c"
         "audio_features.c"
+        "wake_led.c"
     INCLUDE_DIRS
         "."
     REQUIRES
         esp_driver_i2s
+        esp_driver_gpio
         esp_timer
 )
